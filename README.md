@@ -12,7 +12,7 @@ Este es un plugin externo para la aplicación nativa **Sailfish Weather** que pe
 
 ## 🚀 Instalación
 
-### Vía RPM
+### Vía OpenRepos
 1. Busca **AEMET Weather Backend** en Storeman o instálalo directamente desde la web de [OpenRepos](https://openrepos.net/content/juanro49/aemet-weather-backend).
 2. Si has descargado el rpm manualmente, instálalo usando la terminal:
    ```bash
@@ -62,7 +62,7 @@ Si deseas compilar el paquete por tu cuenta o contribuir al desarrollo, necesita
 
 ## 🙏 Créditos y Atribuciones
 
-- Datos meteorológicos elaborados por la **Agencia Estatal de Meteorología (AEMET)**.
+- Datos meteorológicos elaborados por la **[Agencia Estatal de Meteorología (AEMET)](https://www.aemet.es)**.
 - Geocodificación inversa proporcionada por **IGN CartoCiudad**.
 - Búsqueda de ubicaciones por **GeoNames**.
 - Basado en la estructura de backends de la aplicación [Sailfish Weather](https://github.com/sailfishos/sailfish-weather).
