@@ -1,99 +1,123 @@
 .pragma library
 
-var ineCache = {};
-var dataCache = {};
-var CACHE_DURATION = 3600000; // 1 hour in ms
 var USER_AGENT = "Sailfish Weather/1.0 (+https://github.com/juanro49/harbour-weather-backend-aemet)";
+var urlCache = {};
+var dataCache = {};
+var pendingRequests = [];
+var inFlight = {};
+var ineCache = {};
 
-/**
- * Removes accents from a string (Qt 5.6 compatible)
- */
-function removeAccents(str) {
-    if (!str) return "";
-    var accents = 'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐÌÍÎÏìíîïÙÚÛÜùúûüÑñŠšŸÿýŽž';
-    var accentsOut = "AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeecCcDIIIIiiiiUUUUuuuuNnSsYyyZz";
-    var s = str.split('');
-    for (var i = 0; i < s.length; i++) {
-        var x = accents.indexOf(s[i]);
-        if (x !== -1) s[i] = accentsOut[x];
+function fetchToken(request, apiKey) {
+    if (!request || !request.source) return false;
+    if (request.source.indexOf("opendata.aemet.es") === -1 || request.source.indexOf("/sh/") !== -1) {
+        request.token = apiKey || "";
+        return true;
     }
-    return s.join('');
-}
-
-function getIneCode(latitude, longitude) {
-    var key = latitude.toFixed(4) + "," + longitude.toFixed(4);
-    var now = Date.now();
-    if (ineCache[key] && (now - ineCache[key].timestamp < CACHE_DURATION)) return ineCache[key].code;
-
-    var url = "https://www.cartociudad.es/geocoder/api/geocoder/reverseGeocode?lon=" + longitude + "&lat=" + latitude;
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, false);
-    xhr.setRequestHeader("User-Agent", USER_AGENT);
-    try {
-        xhr.send();
-        if (xhr.status === 200) {
-            var res = JSON.parse(xhr.responseText);
-            if (res && res.muniCode) {
-                ineCache[key] = { code: res.muniCode, timestamp: now };
-                return res.muniCode;
+    var sourceUrl = request.source;
+    if (urlCache[sourceUrl]) {
+        request.source = urlCache[sourceUrl] + (urlCache[sourceUrl].indexOf('?') === -1 ? "?" : "&") + "api_key=";
+        request.token = apiKey || "";
+        return true;
+    }
+    if (!inFlight[sourceUrl]) {
+        inFlight[sourceUrl] = true;
+        var metadataUrl = sourceUrl;
+        if (metadataUrl.indexOf("api_key=") === -1) {
+            metadataUrl += (metadataUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=" + apiKey;
+        } else if (metadataUrl.substring(metadataUrl.length - 8) === "api_key=") {
+            metadataUrl += apiKey;
+        }
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", metadataUrl, true);
+        xhr.setRequestHeader("User-Agent", USER_AGENT);
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                var directUrl = undefined;
+                if (xhr.status === 200) {
+                    try {
+                        var res = JSON.parse(xhr.responseText);
+                        if (res && res.datos) {
+                            directUrl = res.datos;
+                            urlCache[sourceUrl] = directUrl;
+                        }
+                    } catch (e) {}
+                }
+                finalizePending(sourceUrl, directUrl, apiKey);
+                delete inFlight[sourceUrl];
             }
-        }
-    } catch (e) { console.warn("AEMET: Error fetching INE code: " + e); }
-    return undefined;
+        };
+        xhr.send();
+    }
+    pendingRequests.push(request);
+    return false;
 }
 
-function fetchAEMETData(metadataResult, type) {
-    if (!metadataResult) return undefined;
-    if (Array.isArray(metadataResult)) return metadataResult;
-    if (!metadataResult.datos) return undefined;
-
-    var url = metadataResult.datos;
-    var now = Date.now();
-    if (dataCache[url] && (now - dataCache[url].timestamp < CACHE_DURATION)) return dataCache[url].data;
-
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, false);
-    xhr.setRequestHeader("User-Agent", USER_AGENT);
-    try {
-        xhr.send();
-        if (xhr.status === 200) {
-            var data = JSON.parse(xhr.responseText);
-            dataCache[url] = {
-                data: data,
-                timestamp: now,
-                type: type,
-                ine: (data && data[0]) ? data[0].id : undefined
-            };
-            return data;
+function finalizePending(sourceUrl, directUrl, apiKey) {
+    var stillPending = [];
+    for (var i = 0; i < pendingRequests.length; i++) {
+        var req = pendingRequests[i];
+        if (req && req.source === sourceUrl) {
+            if (directUrl) {
+                req.source = directUrl + (directUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=";
+                req.token = apiKey || "";
+            } else {
+                req.token = apiKey || "";
+            }
+        } else {
+            stillPending.push(req);
         }
-    } catch (e) { console.warn("AEMET: Error fetching data: " + e); }
-    return undefined;
+    }
+    pendingRequests = stillPending;
+}
+
+function updateDataCache(result, type) {
+    if (!result || !Array.isArray(result) || !result[0]) return;
+    var ine = result[0].id;
+    if (ine) {
+        dataCache[ine + "_" + type] = {
+            data: result,
+            timestamp: Date.now()
+        };
+    }
 }
 
 function getDailyPrecipitation(ine, dateStr) {
-    var total = 0;
-    var found = false;
     var target = dateStr.substring(0, 10);
-    for (var key in dataCache) {
-        var entry = dataCache[key];
-        if (entry.type === "hourly" && entry.ine === ine) {
-            var days = entry.data[0].prediccion.dia;
-            for (var i = 0; i < days.length; i++) {
-                if (days[i].fecha.substring(0, 10) === target) {
-                    var precips = days[i].precipitacion;
-                    if (precips) {
-                        for (var j = 0; j < precips.length; j++) {
-                            total += parseAEMETValue(precips[j].value);
-                        }
-                        found = true;
-                    }
+    var entry = dataCache[ine + "_hourly"];
+    if (entry && entry.data && entry.data[0].prediccion.dia) {
+        var days = entry.data[0].prediccion.dia;
+        for (var i = 0; i < days.length; i++) {
+            if (days[i].fecha.substring(0, 10) === target) {
+                var total = 0;
+                var precips = days[i].precipitacion;
+                if (precips) {
+                    for (var j = 0; j < precips.length; j++) total += parseAEMETValue(precips[j].value);
+                    return total;
                 }
             }
         }
-        if (found) break;
     }
-    if (found) console.log("AEMET: Rain sum for " + target + ": " + total.toFixed(1) + "mm");
-    return found ? total : undefined;
+    return undefined;
+}
+
+function getIneCode(latitude, longitude) {
+    if (latitude === undefined || longitude === undefined) return undefined;
+    var key = latitude.toFixed(2) + "," + longitude.toFixed(2);
+    if (ineCache[key]) return ineCache[key];
+    var url = "https://www.cartociudad.es/geocoder/api/geocoder/reverseGeocode?lon=" + longitude + "&lat=" + latitude;
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.setRequestHeader("User-Agent", USER_AGENT);
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+            try {
+                var res = JSON.parse(xhr.responseText);
+                if (res && res.muniCode) ineCache[key] = res.muniCode;
+            } catch (e) {}
+        }
+    };
+    xhr.send();
+    return undefined;
 }
 
 function weatherTypeFromAEMET(code) {
@@ -147,4 +171,20 @@ function parseWindDirection(dir) {
     if (Array.isArray(dir)) dir = dir[0];
     var directions = { "N": 0, "NE": 45, "E": 90, "SE": 135, "S": 180, "SO": 225, "O": 270, "NO": 315, "C": 0 };
     return (directions[dir] !== undefined) ? directions[dir] : 0;
+}
+
+function convertWindSpeed(kmh) {
+    return Math.round(parseAEMETValue(kmh) / 3.6);
+}
+
+function removeAccents(str) {
+    if (!str) return "";
+    var accents = 'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐÌÍÎÏìíîïÙÚÛÜùúûüÑñŠšŸÿýŽž';
+    var accentsOut = "AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeecCcDIIIIiiiiUUUUuuuuNnSsYyyZz";
+    var s = str.split('');
+    for (var i = 0; i < s.length; i++) {
+        var x = accents.indexOf(s[i]);
+        if (x !== -1) s[i] = accentsOut[x];
+    }
+    return s.join('');
 }
