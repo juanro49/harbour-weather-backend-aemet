@@ -122,19 +122,29 @@ QtObject {
 
         for (var d = 0; d < prediccion.dia.length; d++) {
             var day = prediccion.dia[d];
-            if (day.fecha.substring(0, 10) === dStr || d === 0) {
+            if (day.fecha.substring(0, 10) === dStr) {
                 var t = findVal(day.temperatura, hStr);
+                if (!t && day.temperatura && day.temperatura.length > 0) t = day.temperatura[0];
                 if (t) {
                     res.temp = AEMETUtils.parseAEMETValue(t.value);
-                    var s = findVal(day.estadoCielo, hStr); if (s) { res.state = s.value; res.desc = s.descripcion; }
-                    var f = findVal(day.sensTermica, hStr); if (f) res.feels = AEMETUtils.parseAEMETValue(f.value);
-                    var p = findVal(day.precipitacion, hStr); if (p) res.precip = AEMETUtils.parseAEMETValue(p.value);
+                    var targetH = t.hora || t.periodo;
+                    var s = findVal(day.estadoCielo, targetH); if (s) { res.state = s.value; res.desc = s.descripcion; }
+                    var f = findVal(day.sensTermica, targetH); if (f) res.feels = AEMETUtils.parseAEMETValue(f.value);
+                    var p = findVal(day.precipitacion, targetH); if (p) res.precip = AEMETUtils.parseAEMETValue(p.value);
                     found = true; break;
                 }
             }
         }
 
-        if (!found && day0.temperatura && day0.temperatura.length > 0) res.temp = AEMETUtils.parseAEMETValue(day0.temperatura[0].value);
+        if (!found) {
+            for (var i = 0; i < prediccion.dia.length; i++) {
+                if (prediccion.dia[i].fecha.substring(0, 10) >= dStr) {
+                    day0 = prediccion.dia[i];
+                    break;
+                }
+            }
+            if (day0 && day0.temperatura && day0.temperatura.length > 0) res.temp = AEMETUtils.parseAEMETValue(day0.temperatura[0].value);
+        }
 
         return {
             "timestamp": now,
@@ -189,9 +199,13 @@ QtObject {
             weatherData.sort(function(a, b) { return a.timestamp - b.timestamp; });
             return BackendUtils.normalizeHourlyTemperatures(weatherData, visibleCount, minimumHourlyRange, true);
         } else {
+            var n = new Date();
+            var todayStr = n.getFullYear() + "-" + ((n.getMonth() + 1) < 10 ? "0" : "") + (n.getMonth() + 1) + "-" + (n.getDate() < 10 ? "0" : "") + n.getDate();
             for (var i = 0; i < prediccion.dia.length; i++) {
                 var dd = prediccion.dia[i];
                 var dateStr = dd.fecha.substring(0, 10);
+                if (dateStr < todayStr) continue;
+
                 var maxT = dd.temperatura ? AEMETUtils.parseAEMETValue(dd.temperatura.maxima) : 0;
                 var minT = dd.temperatura ? AEMETUtils.parseAEMETValue(dd.temperatura.minima) : 0;
                 var sObjArr = dd.estadoCielo || [];

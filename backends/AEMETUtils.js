@@ -9,14 +9,24 @@ var ineCache = {};
 
 function fetchToken(request, apiKey) {
     if (!request || !request.source) return false;
-    if (request.source.indexOf("opendata.aemet.es") === -1 || request.source.indexOf("/sh/") !== -1) {
+    if (request.source.indexOf("/sh/") !== -1) {
+        request.token = "";
+        return true;
+    }
+    if (request.source.indexOf("opendata.aemet.es") === -1) {
         request.token = apiKey || "";
         return true;
     }
     var sourceUrl = request.source;
     if (urlCache[sourceUrl]) {
-        request.source = urlCache[sourceUrl] + (urlCache[sourceUrl].indexOf('?') === -1 ? "?" : "&") + "api_key=";
-        request.token = apiKey || "";
+        var directUrl = urlCache[sourceUrl];
+        if (directUrl.indexOf("/sh/") !== -1) {
+            request.source = directUrl;
+            request.token = "";
+        } else {
+            request.source = directUrl + (directUrl.indexOf('?') === -1 ? "?" : "&") + "api_key=";
+            request.token = apiKey || "";
+        }
         return true;
     }
     if (!inFlight[sourceUrl]) {
@@ -58,10 +68,18 @@ function finalizePending(sourceUrl, directUrl, apiKey) {
         var req = pendingRequests[i];
         if (req && req.source === sourceUrl) {
             if (directUrl) {
-                req.source = directUrl + (directUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=";
-                req.token = apiKey || "";
+                if (directUrl.indexOf("/sh/") !== -1) {
+                    req.source = directUrl;
+                    req.token = "";
+                } else {
+                    req.source = directUrl + (directUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=";
+                    req.token = apiKey || "";
+                }
             } else {
-                req.token = apiKey || "";
+                req.token = "";
+            }
+            if (typeof req.sendRequest === "function") {
+                req.sendRequest();
             }
         } else {
             stillPending.push(req);
