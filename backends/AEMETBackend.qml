@@ -46,7 +46,13 @@ QtObject {
         var ine = getIneCode(weather);
         if (!ine) return "";
         var type = isHourly ? "horaria/" : "diaria/";
-        return "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/" + type + ine + "?api_key=";
+        var url = "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/" + type + ine;
+        // Change URL periodically to force Events View to refresh.
+        // 30 min for hourly, 180 min for daily to match sailfish-weather's maxUpdateInterval.
+        var interval = isHourly ? 1800000 : 10800000;
+        url += "?t=" + Math.floor(Date.now() / interval);
+        url += "&api_key=";
+        return url;
     }
 
     function searchLocationUrl(filter, language) {
