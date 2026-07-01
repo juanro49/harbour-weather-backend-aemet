@@ -39,20 +39,27 @@ QtObject {
     function currentWeatherUrl(weather) {
         var ine = getIneCode(weather);
         if (!ine) return "";
-        return "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/horaria/" + ine + "?api_key=";
+        var metaUrl = "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/horaria/" + ine;
+        if (AEMETUtils.urlCache[metaUrl]) {
+            return AEMETUtils.urlCache[metaUrl];
+        }
+        return metaUrl;
     }
     function latestObservationUrl(weather) { return currentWeatherUrl(weather) }
     function forecastUrl(weather, isHourly) {
         var ine = getIneCode(weather);
         if (!ine) return "";
         var type = isHourly ? "horaria/" : "diaria/";
-        var url = "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/" + type + ine;
+        var metaUrl = "https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/" + type + ine;
         // Change URL periodically to force Events View to refresh.
         // 30 min for hourly, 180 min for daily to match sailfish-weather's maxUpdateInterval.
         var interval = isHourly ? 1800000 : 10800000;
-        url += "?t=" + Math.floor(Date.now() / interval);
-        url += "&api_key=";
-        return url;
+        metaUrl += "?t=" + Math.floor(Date.now() / interval);
+
+        if (AEMETUtils.urlCache[metaUrl]) {
+            return AEMETUtils.urlCache[metaUrl];
+        }
+        return metaUrl;
     }
 
     function searchLocationUrl(filter, language) {

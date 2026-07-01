@@ -1,7 +1,7 @@
 Name:       harbour-weather-backend-aemet
 Summary:    AEMET weather provider for Sailfish Weather
 Version:    1.3.9
-Release:    1
+Release:    2
 License:    BSD-3-Clause
 BuildArch:  noarch
 URL:        https://github.com/juanro49/harbour-weather-backend-aemet

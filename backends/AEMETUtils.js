@@ -17,6 +17,11 @@ function fetchToken(request, apiKey) {
         request.token = apiKey || "";
         return true;
     }
+    if (!apiKey) {
+        request.token = "";
+        return true;
+    }
+
     var sourceUrl = request.source;
     if (urlCache[sourceUrl]) {
         var directUrl = urlCache[sourceUrl];
@@ -24,19 +29,15 @@ function fetchToken(request, apiKey) {
             request.source = directUrl;
             request.token = "";
         } else {
-            request.source = directUrl + (directUrl.indexOf('?') === -1 ? "?" : "&") + "api_key=";
-            request.token = apiKey || "";
+            request.token = apiKey;
         }
         return true;
     }
     if (!inFlight[sourceUrl]) {
         inFlight[sourceUrl] = true;
         var metadataUrl = sourceUrl;
-        if (metadataUrl.indexOf("api_key=") === -1) {
-            metadataUrl += (metadataUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=" + apiKey;
-        } else if (metadataUrl.substring(metadataUrl.length - 8) === "api_key=") {
-            metadataUrl += apiKey;
-        }
+        metadataUrl += (metadataUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=" + apiKey;
+
         var xhr = new XMLHttpRequest();
         xhr.open("GET", metadataUrl, true);
         xhr.setRequestHeader("User-Agent", USER_AGENT);
@@ -52,7 +53,7 @@ function fetchToken(request, apiKey) {
                         }
                     } catch (e) {}
                 }
-                finalizePending(sourceUrl, directUrl, apiKey);
+                finalizePending(sourceUrl, directUrl, apiKey, xhr.status);
                 delete inFlight[sourceUrl];
             }
         };
@@ -62,7 +63,7 @@ function fetchToken(request, apiKey) {
     return false;
 }
 
-function finalizePending(sourceUrl, directUrl, apiKey) {
+function finalizePending(sourceUrl, directUrl, apiKey, status) {
     var stillPending = [];
     for (var i = 0; i < pendingRequests.length; i++) {
         var req = pendingRequests[i];
@@ -72,14 +73,15 @@ function finalizePending(sourceUrl, directUrl, apiKey) {
                     req.source = directUrl;
                     req.token = "";
                 } else {
-                    req.source = directUrl + (directUrl.indexOf("?") === -1 ? "?" : "&") + "api_key=";
-                    req.token = apiKey || "";
+                    req.token = apiKey;
+                }
+                if (typeof req.sendRequest === "function") {
+                    req.sendRequest();
                 }
             } else {
-                req.token = "";
-            }
-            if (typeof req.sendRequest === "function") {
-                req.sendRequest();
+                if (typeof req.status !== "undefined") {
+                    req.status = (status === 401) ? 4 : 3;
+                }
             }
         } else {
             stillPending.push(req);
